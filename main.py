@@ -1,21 +1,19 @@
+import sys
+import subprocess
+
+# Автоматическая установка недостающих библиотек при старте
+try:
+    import aiogram
+    import telethon
+except ImportError:
+    print("Установка необходимых библиотек...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiogram>=3.10.0", "telethon>=1.36.0"])
+
+# Далее идут ваши стандартные импорты:
 import asyncio
 import logging
 import sqlite3
-import re
-from datetime import datetime, timedelta
-
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
-from telethon import TelegramClient, events
-
+# ... весь остальной код бота
 # ==========================================
 # ⚙️ НАСТРОЙКИ (КОНФИГУРАЦИЯ)
 # ==========================================
