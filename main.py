@@ -1,28 +1,21 @@
 import sys
 import subprocess
+import asyncio
+import logging
+import sqlite3
+from datetime import datetime, timedelta
 
-# ==========================================================
-# 0. АВТОМАТИЧЕСКАЯ УСТАНОВКА БИБЛИОТЕК (ЕСЛИ ОНИ НЕ УСТАНОВЛЕНЫ)
-# ==========================================================
-def install_dependencies():
+# Автоматическая проверка и доустановка зависимостей при старте
+def ensure_dependencies():
     packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
     for pkg in packages:
         pkg_name = pkg.split(">=")[0]
         try:
             __import__(pkg_name)
         except ImportError:
-            print(f"📦 Установка библиотеки {pkg}...")
             subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
-install_dependencies()
-
-# ==========================================================
-# 1. ИМПОРТЫ
-# ==========================================================
-import asyncio
-import logging
-import sqlite3
-from datetime import datetime, timedelta
+ensure_dependencies()
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -36,36 +29,41 @@ from aiogram.types import (
 )
 from telethon import TelegramClient, events
 
-# ==========================================================
-# 2. КОНФИГУРАЦИЯ И НАСТРОЙКИ
-# ==========================================================
+# ==========================================
+# ⚙️ ВАШИ ДАННЫЕ И НАСТРОЙКИ
+# ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
-SUPPORT_USERNAME = "@your_support_username"  # Замените на юзернейм вашей техподдержки
-TRIAL_DAYS = 3  # Длительность бесплатного периода
+SUPPORT_USERNAME = "@your_support_username"  # Укажите ваш юзернейм техподдержки
+TRIAL_DAYS = 3  # Бесплатный период (3 дня)
 
-# Данные клиента Telethon с сайта my.telegram.org
-API_ID = 12345678          # Замените на ваш API ID (число)
-API_HASH = "ВАШ_API_HASH"  # Замените на ваш API Hash (строка)
+# Telethon API (получите на my.telegram.org)
+API_ID = 12345678          # Вставьте ваш API ID (число)
+API_HASH = "ВАШ_API_HASH"  # Вставьте ваш API Hash (строка)
 
 AVAILABLE_CITIES = ["Москва", "Санкт-Петербург", "Краснодар"]
 
-# Список групп и ЖК-чатов для мониторинга
+# 📍 СПИСОК ЧАТОВ ИЗ СКРИНШОТОВ
 MONITORED_CHATS = [
-    {"link": "https://t.me/chat_msk_example", "city": "Москва", "title": "ЖК Пригород"},
-    {"link": "https://t.me/chat_spb_example", "city": "Санкт-Петербург", "title": "ЖК Шуваловский"},
-    {"link": "https://t.me/chat_krd_example", "city": "Краснодар", "title": "ЖК Панорама"},
+    {"link": "https://t.me/gk_mtvpark", "city": "Москва", "title": "ЖК Матвеевский парк"},
+    {"link": "https://t.me/ZK_Aerobus", "city": "Москва", "title": "ЖК Аэробус"},
+    {"link": "https://t.me/vniissok", "city": "Москва", "title": "Дубки (ВНИИССОК)"},
+    {"link": "https://t.me/zelallei", "city": "Москва", "title": "ЖК Зеленые аллеи"},
+    {"link": "https://t.me/salarevoparkzhk", "city": "Москва", "title": "ЖК Саларьево парк"},
+    {"link": "https://t.me/kupiprodaygkpk", "city": "Краснодар", "title": "Купи-продай / Объявления"},
+    {"link": "https://t.me/fsk_zoom", "city": "Санкт-Петербург", "title": "ЖК Zoom на Неве"},
 ]
 
-# Ключевые слова для фильтрации заявок
+# 🔍 КАТЕГОРИИ И КЛЮЧЕВЫЕ СЛОВА ИЗ СКРИНШОТОВ
 KEYWORDS = [
-    "сантехник", "электрик", "плиточник", "мастер", "ремонт", "починить",
-    "уборка", "клининг", "сборка", "установить", "протек", "замок",
-    "посоветуйте мастера", "нужен мастер", "подскажите мастера"
+    "сантехника", "сантехник", "электрика", "электрик", "ремонт техники",
+    "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
+    "плесень", "тараканы", "дезинфекция", "дератизация", "дезинсекция",
+    "засор", "замыкание", "починить", "установить", "мастер"
 ]
 
-# ==========================================================
-# 3. БАЗА ДАННЫХ SQLITE
-# ==========================================================
+# ==========================================
+# 🗄 БАЗА ДАННЫХ SQLite
+# ==========================================
 DB_NAME = "bot_database.db"
 
 def init_db():
@@ -145,9 +143,9 @@ def get_active_users_by_city(city: str):
             pass
     return active_ids
 
-# ==========================================================
-# 4. ИНТЕРФЕЙС И КЛАВИАТУРЫ
-# ==========================================================
+# ==========================================
+# ⌨️ КЛАВИАТУРЫ
+# ==========================================
 def get_main_keyboard():
     keyboard = [
         [KeyboardButton(text="Моя статистика")],
@@ -171,9 +169,9 @@ def get_lead_keyboard(user_link: str, message_link: str):
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# ==========================================================
-# 5. ОСНОВНОЙ БОТ (AIOGRAM 3)
-# ==========================================================
+# ==========================================
+# 🤖 ЛОГИКА TELEGRAM БОТА
+# ==========================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -292,26 +290,23 @@ async def callback_none(call: CallbackQuery):
 async def cmd_test_lead(message: Message):
     user = get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
     city = user[3]
-    lead_text = f"Соседи, подскажите проверенного сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Центральный ({city})"
+    lead_text = f"Соседи, подскажите хорошего сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Матвеевский парк ({city})"
     kb = get_lead_keyboard("https://t.me/telegram", "https://t.me/telegram")
     increment_received(message.from_user.id)
     await message.answer(lead_text, reply_markup=kb, parse_mode="Markdown")
 
-# ==========================================================
-# 6. ПАРСЕР ЧАТОВ (TELETHON)
-# ==========================================================
+# ==========================================
+# 📡 МОНИТОРИНГ ЧАТОВ TELETHON
+# ==========================================
 client = None
-
 if API_ID != 12345678 and API_HASH != "ВАШ_API_HASH":
     client = TelegramClient("session_parser", API_ID, API_HASH)
 
 async def start_parser():
     if not client:
-        print("⚠️ Telethon отключен: укажите корректные API_ID и API_HASH в настройках.")
         return
-
     await client.start()
-    print("📡 Парсер Telethon подключен к аккаунту.")
+    print("📡 Telethon клиент запущен и подключен.")
 
     target_dialog_ids = []
     chat_city_map = {}
@@ -323,12 +318,11 @@ async def start_parser():
             target_dialog_ids.append(entity.id)
             chat_city_map[entity.id] = item["city"]
             chat_title_map[entity.id] = item.get("title") or getattr(entity, "title", "ЖК Чат")
-            print(f"✅ Мониторинг активен: {chat_title_map[entity.id]} ({item['city']})")
         except Exception as e:
-            print(f"⚠️ Не удалось подключить чат {item['link']}: {e}")
+            logging.error(f"Не удалось подключить чат {item['link']}: {e}")
 
     @client.on(events.NewMessage(chats=target_dialog_ids))
-    async def lead_filter_handler(event):
+    async def message_filter(event):
         text = event.message.message or ""
         text_lower = text.lower()
 
@@ -346,11 +340,7 @@ async def start_parser():
             user_link = f"tg://user?id={event.sender_id}"
 
         chat_username = getattr(event.chat, "username", None)
-        if chat_username:
-            msg_link = f"https://t.me/{chat_username}/{event.message.id}"
-        else:
-            msg_link = user_link
-
+        msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
         lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title} ({city})"
         kb = get_lead_keyboard(user_link, msg_link)
 
@@ -360,11 +350,11 @@ async def start_parser():
                 increment_received(uid)
                 await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
             except Exception as err:
-                logging.error(f"Ошибка доставки пользователю {uid}: {err}")
+                logging.error(f"Ошибка отправки: {err}")
 
-# ==========================================================
-# 7. ТОЧКА ВХОДА
-# ==========================================================
+# ==========================================
+# 🚀 ЗАПУСК
+# ==========================================
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
@@ -372,7 +362,7 @@ async def main():
     if client:
         asyncio.create_task(start_parser())
         
-    print("🚀 Бот успешно запущен!")
+    print("🚀 Бот успешно запущен на Railway!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
