@@ -30,7 +30,7 @@ from aiogram.types import (
 from telethon import TelegramClient, events
 
 # ==========================================
-# ⚙️ ВАШИ ДАННЫЕ И НАСТРОЙКИ
+# ⚙️ НАСТРОЙКИ И ДАННЫЕ
 # ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
 SUPPORT_USERNAME = "@your_support_username"  # Укажите ваш юзернейм техподдержки
@@ -40,20 +40,18 @@ TRIAL_DAYS = 3  # Бесплатный период (3 дня)
 API_ID = 12345678          # Вставьте ваш API ID (число)
 API_HASH = "ВАШ_API_HASH"  # Вставьте ваш API Hash (строка)
 
-AVAILABLE_CITIES = ["Москва", "Санкт-Петербург", "Краснодар"]
-
-# 📍 СПИСОК ЧАТОВ ИЗ СКРИНШОТОВ
+# 📍 СПИСОК ЧАТОВ ДЛЯ МОНИТОРИНГА (МОСКВА, СПБ, КРАСНОДАР)
 MONITORED_CHATS = [
     {"link": "https://t.me/gk_mtvpark", "city": "Москва", "title": "ЖК Матвеевский парк"},
     {"link": "https://t.me/ZK_Aerobus", "city": "Москва", "title": "ЖК Аэробус"},
     {"link": "https://t.me/vniissok", "city": "Москва", "title": "Дубки (ВНИИССОК)"},
     {"link": "https://t.me/zelallei", "city": "Москва", "title": "ЖК Зеленые аллеи"},
     {"link": "https://t.me/salarevoparkzhk", "city": "Москва", "title": "ЖК Саларьево парк"},
-    {"link": "https://t.me/kupiprodaygkpk", "city": "Краснодар", "title": "Купи-продай / Объявления"},
     {"link": "https://t.me/fsk_zoom", "city": "Санкт-Петербург", "title": "ЖК Zoom на Неве"},
+    {"link": "https://t.me/kupiprodaygkpk", "city": "Краснодар", "title": "Купи-продай / Объявления"},
 ]
 
-# 🔍 КАТЕГОРИИ И КЛЮЧЕВЫЕ СЛОВА ИЗ СКРИНШОТОВ
+# 🔍 КЛЮЧЕВЫЕ СЛОВА ДЛЯ ПОИСКА ЗАЯВОК
 KEYWORDS = [
     "сантехника", "сантехник", "электрика", "электрик", "ремонт техники",
     "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
@@ -74,7 +72,6 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             full_name TEXT,
-            city TEXT DEFAULT 'Москва',
             registered_at TIMESTAMP,
             received_leads INTEGER DEFAULT 0,
             processed_leads INTEGER DEFAULT 0,
@@ -101,13 +98,6 @@ def get_or_create_user(user_id: int, username: str, full_name: str):
     conn.close()
     return user
 
-def update_user_city(user_id: int, city: str):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET city = ? WHERE user_id = ?", (city, user_id))
-    conn.commit()
-    conn.close()
-
 def increment_processed(user_id: int):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -122,10 +112,11 @@ def increment_received(user_id: int):
     conn.commit()
     conn.close()
 
-def get_active_users_by_city(city: str):
+def get_all_active_users():
+    """Возвращает всех пользователей с активной подпиской или триалом"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, registered_at, is_subscribed FROM users WHERE city = ?", (city,))
+    cursor.execute("SELECT user_id, registered_at, is_subscribed FROM users")
     rows = cursor.fetchall()
     conn.close()
     
@@ -155,12 +146,6 @@ def get_main_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-def get_city_selection_keyboard():
-    buttons = [
-        [InlineKeyboardButton(text=f"📍 {c}", callback_data=f"set_city:{c}")] for c in AVAILABLE_CITIES
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 def get_lead_keyboard(user_link: str, message_link: str):
     buttons = [
         [InlineKeyboardButton(text="Написать сообщение ↗", url=user_link)],
@@ -178,26 +163,17 @@ dp = Dispatcher()
 @dp.message(CommandStart())
 @dp.message(F.text == "Перезапустить бота")
 async def cmd_start(message: Message):
-    user = get_or_create_user(
+    get_or_create_user(
         user_id=message.from_user.id,
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or ""
     )
-    current_city = user[3]
     text = (
         "Привет - это бот в котором приходят запросы в режиме онлайн!\n\n"
-        f"📍 Ваш текущий город: **{current_city}**\n"
-        "Вы можете изменить город в любой момент, нажав кнопку ниже:"
+        "📍 **Регионы мониторинга:** Москва, Санкт-Петербург, Краснодар\n"
+        "Заявки из ЖК-чатов поступают в режиме реального времени."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
-    await message.answer("Выберите город для получения заявок:", reply_markup=get_city_selection_keyboard())
-
-@dp.callback_query(F.data.startswith("set_city:"))
-async def callback_set_city(call: CallbackQuery):
-    city = call.data.split(":")[1]
-    update_user_city(call.from_user.id, city)
-    await call.message.edit_text(f"✅ Город успешно изменен на: **{city}**", parse_mode="Markdown")
-    await call.answer()
 
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
@@ -207,11 +183,11 @@ async def cmd_instruction(message: Message):
         "- Используйте кнопку «Написать сообщение», чтобы связаться с автором напрямую.\n"
         "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к посту в ЖК-чате.\n\n"
         "2. **Статистика:**\n"
-        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов.\n\n"
+        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов со всех городов.\n\n"
         "3. **Поддержка:**\n"
         "- При возникновении вопросов нажмите кнопку «Поддержка».\n\n"
         "4. **Перезапуск бота:**\n"
-        "- Для смены города или обновления меню нажмите «Перезапустить бота».\n\n"
+        "- Для обновления меню нажмите «Перезапустить бота».\n\n"
         "📌 **Важно:**\n"
         f"- Пробный период длится {TRIAL_DAYS} дня с момента первого запуска.\n"
         "- После окончания пробного периода необходимо активировать подписку."
@@ -225,11 +201,11 @@ async def cmd_stats(message: Message):
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or ""
     )
-    city, received, processed = user[3], user[5], user[6]
+    received, processed = user[4], user[5]
     conversion = round((processed / received * 100), 1) if received > 0 else 0
     text = (
         "📊 **Ваша статистика:**\n\n"
-        f"📍 **Выбранный город:** {city}\n"
+        "📍 **Города:** Москва, Санкт-Петербург, Краснодар\n"
         f"📥 **Получено запросов:** {received}\n"
         f"✅ **Обработано вами:** {processed}\n"
         f"🎯 **Конверсия:** {conversion}%"
@@ -244,11 +220,11 @@ async def cmd_subscription(message: Message):
         full_name=message.from_user.full_name or ""
     )
     try:
-        reg_time = datetime.fromisoformat(user[4])
+        reg_time = datetime.fromisoformat(user[3])
     except Exception:
         reg_time = datetime.now()
 
-    is_paid = bool(user[7])
+    is_paid = bool(user[6])
     trial_end = reg_time + timedelta(days=TRIAL_DAYS)
     now = datetime.now()
 
@@ -288,9 +264,8 @@ async def callback_none(call: CallbackQuery):
 
 @dp.message(Command("test_lead"))
 async def cmd_test_lead(message: Message):
-    user = get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
-    city = user[3]
-    lead_text = f"Соседи, подскажите хорошего сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Матвеевский парк ({city})"
+    get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
+    lead_text = "Соседи, подскажите проверенного сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Матвеевский парк (Москва)"
     kb = get_lead_keyboard("https://t.me/telegram", "https://t.me/telegram")
     increment_received(message.from_user.id)
     await message.answer(lead_text, reply_markup=kb, parse_mode="Markdown")
@@ -344,13 +319,14 @@ async def start_parser():
         lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title} ({city})"
         kb = get_lead_keyboard(user_link, msg_link)
 
-        recipients = get_active_users_by_city(city)
+        # Рассылка всем активным подписчикам
+        recipients = get_all_active_users()
         for uid in recipients:
             try:
                 increment_received(uid)
                 await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
             except Exception as err:
-                logging.error(f"Ошибка отправки: {err}")
+                logging.error(f"Ошибка отправки пользователю {uid}: {err}")
 
 # ==========================================
 # 🚀 ЗАПУСК
@@ -362,7 +338,7 @@ async def main():
     if client:
         asyncio.create_task(start_parser())
         
-    print("🚀 Бот успешно запущен на Railway!")
+    print("🚀 Бот успешно запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
