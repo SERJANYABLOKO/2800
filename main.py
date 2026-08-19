@@ -3,7 +3,7 @@ import subprocess
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Автоматическая проверка и доустановка зависимостей при старте
 def ensure_dependencies():
@@ -33,14 +33,13 @@ from telethon import TelegramClient, events
 # ⚙️ НАСТРОЙКИ И ДАННЫЕ
 # ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
-SUPPORT_USERNAME = "@your_support_username"  # Укажите ваш юзернейм техподдержки
-TRIAL_DAYS = 3  # Бесплатный период (3 дня)
+SUPPORT_USERNAME = "@your_support_username"  # Укажите ваш контакт поддержки
 
 # Telethon API (получите на my.telegram.org)
 API_ID = 12345678          # Вставьте ваш API ID (число)
 API_HASH = "ВАШ_API_HASH"  # Вставьте ваш API Hash (строка)
 
-# 📍 СПИСОК ЧАТОВ ДЛЯ МОНИТОРИНГА (МОСКВА, СПБ, КРАСНОДАР)
+# 📍 СПИСОК ЧАТОВ ДЛЯ МОНИТОРИНГА
 MONITORED_CHATS = [
     {"link": "https://t.me/gk_mtvpark", "city": "Москва", "title": "ЖК Матвеевский парк"},
     {"link": "https://t.me/ZK_Aerobus", "city": "Москва", "title": "ЖК Аэробус"},
@@ -74,8 +73,7 @@ def init_db():
             full_name TEXT,
             registered_at TIMESTAMP,
             received_leads INTEGER DEFAULT 0,
-            processed_leads INTEGER DEFAULT 0,
-            is_subscribed INTEGER DEFAULT 0
+            processed_leads INTEGER DEFAULT 0
         )
     """)
     conn.commit()
@@ -112,27 +110,14 @@ def increment_received(user_id: int):
     conn.commit()
     conn.close()
 
-def get_all_active_users():
-    """Возвращает всех пользователей с активной подпиской или триалом"""
+def get_all_users():
+    """Возвращает всех пользователей (доступ всегда активен для всех)"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, registered_at, is_subscribed FROM users")
+    cursor.execute("SELECT user_id FROM users")
     rows = cursor.fetchall()
     conn.close()
-    
-    active_ids = []
-    now = datetime.now()
-    for uid, reg_time_str, is_sub in rows:
-        if is_sub:
-            active_ids.append(uid)
-            continue
-        try:
-            reg_time = datetime.fromisoformat(reg_time_str)
-            if now < reg_time + timedelta(days=TRIAL_DAYS):
-                active_ids.append(uid)
-        except Exception:
-            pass
-    return active_ids
+    return [r[0] for r in rows]
 
 # ==========================================
 # ⌨️ КЛАВИАТУРЫ
@@ -170,8 +155,8 @@ async def cmd_start(message: Message):
     )
     text = (
         "Привет - это бот в котором приходят запросы в режиме онлайн!\n\n"
-        "📍 **Регионы мониторинга:** Москва, Санкт-Петербург, Краснодар\n"
-        "Заявки из ЖК-чатов поступают в режиме реального времени."
+        "📍 **Регионы:** Москва, Санкт-Петербург, Краснодар\n"
+        "🟢 **Статус:** Вечный неограниченный доступ активирован."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
@@ -183,14 +168,13 @@ async def cmd_instruction(message: Message):
         "- Используйте кнопку «Написать сообщение», чтобы связаться с автором напрямую.\n"
         "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к посту в ЖК-чате.\n\n"
         "2. **Статистика:**\n"
-        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов со всех городов.\n\n"
+        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов.\n\n"
         "3. **Поддержка:**\n"
         "- При возникновении вопросов нажмите кнопку «Поддержка».\n\n"
         "4. **Перезапуск бота:**\n"
         "- Для обновления меню нажмите «Перезапустить бота».\n\n"
-        "📌 **Важно:**\n"
-        f"- Пробный период длится {TRIAL_DAYS} дня с момента первого запуска.\n"
-        "- После окончания пробного периода необходимо активировать подписку."
+        "📌 **Доступ:**\n"
+        "- Вам предоставлен бессрочный доступ ко всем заявкам без ограничений по времени."
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -208,39 +192,18 @@ async def cmd_stats(message: Message):
         "📍 **Города:** Москва, Санкт-Петербург, Краснодар\n"
         f"📥 **Получено запросов:** {received}\n"
         f"✅ **Обработано вами:** {processed}\n"
-        f"🎯 **Конверсия:** {conversion}%"
+        f"🎯 **Конверсия:** {conversion}%\n"
+        "♾ **Подписка:** Бессрочная (Безлимит)"
     )
     await message.answer(text, parse_mode="Markdown")
 
 @dp.message(F.text.in_(["Проверить подписку", "Активировать подписку"]))
 async def cmd_subscription(message: Message):
-    user = get_or_create_user(
-        user_id=message.from_user.id,
-        username=message.from_user.username or "",
-        full_name=message.from_user.full_name or ""
+    text = (
+        "💳 **Статус доступа:**\n\n"
+        "🟢 **Бессрочная подписка активна (Безлимит)**\n"
+        "Ограничений по времени и количеству заявок нет."
     )
-    try:
-        reg_time = datetime.fromisoformat(user[3])
-    except Exception:
-        reg_time = datetime.now()
-
-    is_paid = bool(user[6])
-    trial_end = reg_time + timedelta(days=TRIAL_DAYS)
-    now = datetime.now()
-
-    if is_paid:
-        sub_status = "🟢 **Платная подписка активна (Безлимит)**"
-    elif now < trial_end:
-        rem_sec = int((trial_end - now).total_seconds())
-        days = rem_sec // 86400
-        hours = (rem_sec % 86400) // 3600
-        minutes = (rem_sec % 3600) // 60
-        time_left_str = f"{days} дн. {hours} ч." if days > 0 else f"{hours} ч. {minutes} мин."
-        sub_status = f"🟡 **Активен пробный период** (осталось {time_left_str})"
-    else:
-        sub_status = "🔴 **Пробный период завершен.** Заявки приостановлены."
-
-    text = f"💳 **Статус доступа:**\n\n{sub_status}\n\nДля продления напишите: {SUPPORT_USERNAME}"
     await message.answer(text, parse_mode="Markdown")
 
 @dp.message(F.text == "Поддержка")
@@ -319,8 +282,8 @@ async def start_parser():
         lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title} ({city})"
         kb = get_lead_keyboard(user_link, msg_link)
 
-        # Рассылка всем активным подписчикам
-        recipients = get_all_active_users()
+        # Рассылка всем зарегистрированным пользователям без проверки сроков
+        recipients = get_all_users()
         for uid in recipients:
             try:
                 increment_received(uid)
