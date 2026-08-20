@@ -5,7 +5,9 @@ import logging
 import sqlite3
 from datetime import datetime
 
-# Автоматическая проверка и доустановка зависимостей при старте
+# ==========================================
+# 0. АВТОМАТИЧЕСКАЯ УСТАНОВКА БИБЛИОТЕК
+# ==========================================
 def ensure_dependencies():
     packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
     for pkg in packages:
@@ -13,6 +15,7 @@ def ensure_dependencies():
         try:
             __import__(pkg_name)
         except ImportError:
+            print(f"📦 Установка {pkg}...")
             subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
 ensure_dependencies()
@@ -30,36 +33,59 @@ from aiogram.types import (
 from telethon import TelegramClient, events
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ И ДАННЫЕ
+# 1. КОНФИГУРАЦИЯ И ВАШИ ДАННЫЕ
 # ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
-SUPPORT_USERNAME = "@your_support_username"  # Укажите ваш контакт поддержки
+SUPPORT_USERNAME = "@your_support_username"  # Укажите юзернейм вашей техподдержки
 
-# Telethon API (получите на my.telegram.org)
+# Получите на https://my.telegram.org (раздел API development tools)
 API_ID = 12345678          # Вставьте ваш API ID (число)
 API_HASH = "ВАШ_API_HASH"  # Вставьте ваш API Hash (строка)
 
-# 📍 СПИСОК ЧАТОВ ДЛЯ МОНИТОРИНГА
+# СПИСОК ЧАТОВ ДЛЯ МОНИТОРИНГА ИЗ ВАШЕГО ДОКУМЕНТА
 MONITORED_CHATS = [
-    {"link": "https://t.me/gk_mtvpark", "city": "Москва", "title": "ЖК Матвеевский парк"},
-    {"link": "https://t.me/ZK_Aerobus", "city": "Москва", "title": "ЖК Аэробус"},
-    {"link": "https://t.me/vniissok", "city": "Москва", "title": "Дубки (ВНИИССОК)"},
-    {"link": "https://t.me/zelallei", "city": "Москва", "title": "ЖК Зеленые аллеи"},
-    {"link": "https://t.me/salarevoparkzhk", "city": "Москва", "title": "ЖК Саларьево парк"},
-    {"link": "https://t.me/fsk_zoom", "city": "Санкт-Петербург", "title": "ЖК Zoom на Неве"},
-    {"link": "https://t.me/kupiprodaygkpk", "city": "Краснодар", "title": "Купи-продай / Объявления"},
+    "https://t.me/zveni_chat",
+    "https://t.me/zhk_zarechye_park",
+    "https://t.me/ogni_jk",
+    "https://t.me/krasnogorsk_Moscow",
+    "https://t.me/perviyuzniy",
+    "https://t.me/zelallei",
+    "https://t.me/talisman_rokoss",
+    "https://t.me/ChatPerovo",
+    "https://t.me/yartsevskaya24",
+    "https://t.me/pro_prokshino_chat",
+    "https://t.me/zkliner",
+    "https://t.me/yubitca12",
+    "https://t.me/novoe_vidnoejk",
+    "https://t.me/zagoryanka",
+    "https://t.me/jkbuninskiekvartali",
+    "https://t.me/Lermontovsky_54",
+    "https://t.me/stal_online",
+    "https://t.me/pervi_donskoy",
+    "https://t.me/krasnogorskiy_nahabino",
+    "https://t.me/michurpark",
+    "https://t.me/jksimvol",
+    "https://t.me/jkrimskiychatsobstvennikov",
+    "https://t.me/pirogovskayariviera",
+    "https://t.me/s_Les",
+    "https://t.me/JkBrigantina",
+    "https://t.me/yujnoe_bunino",
+    "https://t.me/pb17faza",
+    "https://t.me/ilpik",
+    "https://t.me/Lybpark",
 ]
 
-# 🔍 КЛЮЧЕВЫЕ СЛОВА ДЛЯ ПОИСКА ЗАЯВОК
+# КЛЮЧЕВЫЕ СЛОВА ДЛЯ ПОИСКА ЗАЯВОК
 KEYWORDS = [
     "сантехника", "сантехник", "электрика", "электрик", "ремонт техники",
     "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
     "плесень", "тараканы", "дезинфекция", "дератизация", "дезинсекция",
-    "засор", "замыкание", "починить", "установить", "мастер"
+    "засор", "замыкание", "починить", "установить", "мастер", "посоветуйте мастера",
+    "подскажите мастера", "нужен мастер", "подскажите сантехника", "нужен электрик"
 ]
 
 # ==========================================
-# 🗄 БАЗА ДАННЫХ SQLite
+# 2. БАЗА ДАННЫХ SQLite
 # ==========================================
 DB_NAME = "bot_database.db"
 
@@ -111,7 +137,6 @@ def increment_received(user_id: int):
     conn.close()
 
 def get_all_users():
-    """Возвращает всех пользователей (доступ всегда активен для всех)"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users")
@@ -120,7 +145,7 @@ def get_all_users():
     return [r[0] for r in rows]
 
 # ==========================================
-# ⌨️ КЛАВИАТУРЫ
+# 3. КЛАВИАТУРЫ
 # ==========================================
 def get_main_keyboard():
     keyboard = [
@@ -140,7 +165,7 @@ def get_lead_keyboard(user_link: str, message_link: str):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==========================================
-# 🤖 ЛОГИКА TELEGRAM БОТА
+# 4. ОБРАБОТЧИКИ AIOGRAM
 # ==========================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -155,8 +180,8 @@ async def cmd_start(message: Message):
     )
     text = (
         "Привет - это бот в котором приходят запросы в режиме онлайн!\n\n"
-        "📍 **Регионы:** Москва, Санкт-Петербург, Краснодар\n"
-        "🟢 **Статус:** Вечный неограниченный доступ активирован."
+        "🟢 **Статус:** Вечный неограниченный доступ активирован.\n"
+        "Запросы поступают автоматически со всех отслеживаемых ЖК-чатов."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
@@ -166,7 +191,7 @@ async def cmd_instruction(message: Message):
         "📚 **Инструкция по использованию:**\n\n"
         "1. **Обработка запросов:**\n"
         "- Используйте кнопку «Написать сообщение», чтобы связаться с автором напрямую.\n"
-        "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к посту в ЖК-чате.\n\n"
+        "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к исходному посту в ЖК-чате.\n\n"
         "2. **Статистика:**\n"
         "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов.\n\n"
         "3. **Поддержка:**\n"
@@ -174,7 +199,7 @@ async def cmd_instruction(message: Message):
         "4. **Перезапуск бота:**\n"
         "- Для обновления меню нажмите «Перезапустить бота».\n\n"
         "📌 **Доступ:**\n"
-        "- Вам предоставлен бессрочный доступ ко всем заявкам без ограничений по времени."
+        "- Вам предоставлен бессрочный доступ ко всем заявкам без ограничений."
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -189,7 +214,6 @@ async def cmd_stats(message: Message):
     conversion = round((processed / received * 100), 1) if received > 0 else 0
     text = (
         "📊 **Ваша статистика:**\n\n"
-        "📍 **Города:** Москва, Санкт-Петербург, Краснодар\n"
         f"📥 **Получено запросов:** {received}\n"
         f"✅ **Обработано вами:** {processed}\n"
         f"🎯 **Конверсия:** {conversion}%\n"
@@ -228,13 +252,13 @@ async def callback_none(call: CallbackQuery):
 @dp.message(Command("test_lead"))
 async def cmd_test_lead(message: Message):
     get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
-    lead_text = "Соседи, подскажите проверенного сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Матвеевский парк (Москва)"
+    lead_text = "Соседи, подскажите хорошего сантехника пожалуйста 🙏\n\n🗣 **Чат:**\nЖК Заречье Парк"
     kb = get_lead_keyboard("https://t.me/telegram", "https://t.me/telegram")
     increment_received(message.from_user.id)
     await message.answer(lead_text, reply_markup=kb, parse_mode="Markdown")
 
 # ==========================================
-# 📡 МОНИТОРИНГ ЧАТОВ TELETHON
+# 5. МОНИТОРИНГ ЧАТОВ TELETHON
 # ==========================================
 client = None
 if API_ID != 12345678 and API_HASH != "ВАШ_API_HASH":
@@ -242,57 +266,67 @@ if API_ID != 12345678 and API_HASH != "ВАШ_API_HASH":
 
 async def start_parser():
     if not client:
+        print("⚠️ Telethon не запущен: укажите корректные API_ID и API_HASH!")
         return
+
     await client.start()
-    print("📡 Telethon клиент запущен и подключен.")
+    me = await client.get_me()
+    print(f"✅ Парсер Telethon авторизован под: {me.first_name} (@{me.username})")
 
-    target_dialog_ids = []
-    chat_city_map = {}
-    chat_title_map = {}
+    target_dialog_ids = set()
+    chat_titles = {}
 
-    for item in MONITORED_CHATS:
+    for link in MONITORED_CHATS:
         try:
-            entity = await client.get_entity(item["link"])
-            target_dialog_ids.append(entity.id)
-            chat_city_map[entity.id] = item["city"]
-            chat_title_map[entity.id] = item.get("title") or getattr(entity, "title", "ЖК Чат")
+            entity = await client.get_entity(link)
+            target_dialog_ids.add(entity.id)
+            chat_titles[entity.id] = getattr(entity, "title", link)
+            print(f" Подключен чат: {chat_titles[entity.id]}")
         except Exception as e:
-            logging.error(f"Не удалось подключить чат {item['link']}: {e}")
+            print(f"⚠️ Не удалось подключить {link}: {e}")
 
-    @client.on(events.NewMessage(chats=target_dialog_ids))
-    async def message_filter(event):
+    @client.on(events.NewMessage)
+    async def global_message_handler(event):
         text = event.message.message or ""
-        text_lower = text.lower()
+        if not text:
+            return
 
+        # Проверяем, что сообщение из одного из целевых чатов
+        if event.chat_id not in target_dialog_ids:
+            return
+
+        text_lower = text.lower()
         if not any(k in text_lower for k in KEYWORDS):
             return
 
-        chat_id = event.chat_id
-        city = chat_city_map.get(chat_id, "Москва")
-        chat_title = chat_title_map.get(chat_id, "ЖК Чат")
+        chat_title = chat_titles.get(event.chat_id, "ЖК Чат")
+        print(f"🎯 Найдена заявка в [{chat_title}]: {text[:60]}...")
 
+        # Ссылка на автора
         sender = await event.get_sender()
         if getattr(sender, "username", None):
             user_link = f"https://t.me/{sender.username}"
         else:
             user_link = f"tg://user?id={event.sender_id}"
 
+        # Ссылка на сообщение в группе
         chat_username = getattr(event.chat, "username", None)
         msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
-        lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title} ({city})"
+
+        lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title}"
         kb = get_lead_keyboard(user_link, msg_link)
 
-        # Рассылка всем зарегистрированным пользователям без проверки сроков
         recipients = get_all_users()
         for uid in recipients:
             try:
                 increment_received(uid)
                 await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
+                print(f" Отправлено пользователю {uid}")
             except Exception as err:
                 logging.error(f"Ошибка отправки пользователю {uid}: {err}")
 
 # ==========================================
-# 🚀 ЗАПУСК
+# 6. ТОЧКА ВХОДА
 # ==========================================
 async def main():
     logging.basicConfig(level=logging.INFO)
