@@ -5,7 +5,6 @@ import logging
 import sqlite3
 from datetime import datetime
 
-# Установка зависимостей
 def ensure_dependencies():
     packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
     for pkg in packages:
@@ -39,8 +38,7 @@ SUPPORT_USERNAME = "@serjantyabloko"
 API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
-# 🔑 СПИСОК ID, КОМУ ВСЕГДА ПРИХОДЯТ ЗАЯВКИ (Ваш ID резервируется здесь)
-# Если знаете свой точный числовой ID, можете вписать его: HARDCODED_ADMINS = [123456789]
+# Вставьте ваш числовой Telegram ID, если хотите получать заявки без базы
 HARDCODED_ADMINS = []
 
 MONITORED_CHATS = [
@@ -62,7 +60,7 @@ KEYWORDS = [
 ]
 
 # ==========================================
-# 🗄 БАЗА ДАННЫХ SQLite
+# 🗄 БАЗА ДАННЫХ
 # ==========================================
 DB_NAME = "bot_database.db"
 
@@ -120,9 +118,7 @@ def get_all_users():
     rows = cursor.fetchall()
     conn.close()
     db_users = [r[0] for r in rows]
-    # Объединяем пользователей базы и встроенный список
-    all_recipients = list(set(db_users + HARDCODED_ADMINS))
-    return all_recipients
+    return list(set(db_users + HARDCODED_ADMINS))
 
 # ==========================================
 # ⌨️ КЛАВИАТУРЫ
@@ -161,19 +157,17 @@ async def cmd_start(message: Message):
     if message.from_user.id not in HARDCODED_ADMINS:
         HARDCODED_ADMINS.append(message.from_user.id)
 
-    print(f"👤 Новый активный пользователь: {message.from_user.full_name} (ID: {message.from_user.id})")
-
     text = (
         "Привет — это бот онлайн-запросов и заявок на услуги!\n\n"
         f"🟢 **Статус:** Вечный доступ активен.\n"
-        f"🆔 Ваш ID: `{message.from_user.id}` (подключен к рассылке)\n\n"
+        f"🆔 Ваш ID: `{message.from_user.id}` (зарегистрирован в системе)\n\n"
         "Ожидайте заявок из чатов."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
-    await message.answer("📚 Бот автоматически находит сообщения по ключевым словам и пересылает их сюда.", parse_mode="Markdown")
+    await message.answer("📚 Бот отслеживает запросы в ЖК-чатах и моментально присылает их сюда.", parse_mode="Markdown")
 
 @dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
@@ -202,34 +196,32 @@ client = TelegramClient("session_parser", API_ID, API_HASH)
 async def start_parser():
     await client.start()
     me = await client.get_me()
-    print(f"✅ Telethon вошел в аккаунт: {me.first_name} (@{me.username})")
+    print(f"✅ Telethon вошел: {me.first_name} (@{me.username})")
 
-    target_dialog_ids = set()
+    target_chat_ids = set()
     chat_titles = {}
 
-    dialogs = await client.get_dialogs()
-    for d in dialogs:
-        username = getattr(d.entity, "username", None)
-        title = getattr(d.entity, "title", str(d.id))
-        real_id = get_peer_id(d.entity)
+    for chat_name in MONITORED_CHATS:
+        clean_name = chat_name.replace("https://t.me/", "").replace("@", "").strip()
+        try:
+            entity = await client.get_entity(clean_name)
+            p_id = get_peer_id(entity)
+            target_chat_ids.add(p_id)
+            title = getattr(entity, "title", clean_name)
+            chat_titles[p_id] = title
+            print(f"📡 Подключен чат: {title} [ID: {p_id}]")
+        except Exception as e:
+            print(f"⚠️ Не удалось подключить @{clean_name}: {e}")
 
-        for target in MONITORED_CHATS:
-            clean_target = target.replace("https://t.me/", "").replace("@", "").lower()
-            if (username and username.lower() == clean_target) or (clean_target in title.lower()):
-                target_dialog_ids.add(real_id)
-                chat_titles[real_id] = title
-                print(f"📡 Прослушивается чат: {title} [ID: {real_id}]")
+    print(f"\n📊 Всего активно слушаются чатов: {len(target_chat_ids)}\n")
 
-    print(f"\n📊 Всего подключено чатов: {len(target_dialog_ids)}\n")
-
-    # Обработка входящих сообщений (включая свои собственные для тестов)
-    @client.on(events.NewMessage(incoming=None))
+    @client.on(events.NewMessage)
     async def parser_handler(event):
         try:
             chat_id = get_peer_id(event.message.peer_id)
             text = event.message.message or ""
 
-            if not text or chat_id not in target_dialog_ids:
+            if not text or chat_id not in target_chat_ids:
                 return
 
             text_lower = text.lower()
@@ -240,10 +232,15 @@ async def start_parser():
 
             chat_title = chat_titles.get(chat_id, "ЖК Чат")
             print(f"\n🔥 [НАЙДЕНА ЗАЯВКА] Чат: {chat_title} | Ключи: {matched}")
-            print(f"Текст: {text}\n")
 
             sender = await event.get_sender()
-            user_link = f"https://t.me/{sender.username}" if sender and getattr(sender, "username", None) else f"tg://user?id={event.sender_id}"
+            if sender and getattr(sender, "username", None):
+                user_link = f"https://t.me/{sender.username}"
+            elif sender:
+                user_link = f"tg://user?id={event.sender_id}"
+            else:
+                user_link = "https://t.me/telegram"
+
             chat_username = getattr(event.chat, "username", None)
             msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
 
@@ -257,12 +254,12 @@ async def start_parser():
                 try:
                     increment_received(uid)
                     await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
-                    print(f"✅ Успешно доставлено на ID: {uid}")
+                    print(f"✅ Доставлено: {uid}")
                 except Exception as send_err:
-                    print(f"❌ Ошибка отправки пользователю {uid}: {send_err}")
+                    print(f"❌ Ошибка отправки: {send_err}")
 
         except Exception as e:
-            print(f"❌ Ошибка внутри парсера: {e}")
+            print(f"❌ Ошибка в обработчике: {e}")
 
 # ==========================================
 # 🚀 ЗАПУСК
