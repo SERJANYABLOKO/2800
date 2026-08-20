@@ -27,7 +27,7 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from telethon import TelegramClient, events
-from telethon.utils import get_peer_id
+from telethon.tl.functions.channels import JoinChannelRequest
 
 # ==========================================
 # ⚙️ НАСТРОЙКИ
@@ -37,9 +37,6 @@ SUPPORT_USERNAME = "@serjantyabloko"
 
 API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
-
-# Вставьте ваш числовой Telegram ID, если хотите получать заявки без базы
-HARDCODED_ADMINS = []
 
 MONITORED_CHATS = [
     "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
@@ -117,8 +114,7 @@ def get_all_users():
     cursor.execute("SELECT user_id FROM users")
     rows = cursor.fetchall()
     conn.close()
-    db_users = [r[0] for r in rows]
-    return list(set(db_users + HARDCODED_ADMINS))
+    return [r[0] for r in rows]
 
 # ==========================================
 # ⌨️ КЛАВИАТУРЫ
@@ -154,20 +150,22 @@ async def cmd_start(message: Message):
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or ""
     )
-    if message.from_user.id not in HARDCODED_ADMINS:
-        HARDCODED_ADMINS.append(message.from_user.id)
-
     text = (
         "Привет — это бот онлайн-запросов и заявок на услуги!\n\n"
         f"🟢 **Статус:** Вечный доступ активен.\n"
-        f"🆔 Ваш ID: `{message.from_user.id}` (зарегистрирован в системе)\n\n"
-        "Ожидайте заявок из чатов."
+        f"🆔 Ваш ID: `{message.from_user.id}` сохранён в базе рассылки.\n\n"
+        "Заявки из подключенных чатов будут поступать сюда автоматически."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
+@dp.message(Command("test_broadcast"))
+async def cmd_test(message: Message):
+    users = get_all_users()
+    await message.answer(f"🛠 Тест связи: в базе зарегистрировано {len(users)} получателей.")
+
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
-    await message.answer("📚 Бот отслеживает запросы в ЖК-чатах и моментально присылает их сюда.", parse_mode="Markdown")
+    await message.answer("📚 Бот в реальном времени находит запросы по ключевым словам и пересылает их сюда.", parse_mode="Markdown")
 
 @dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
@@ -196,32 +194,36 @@ client = TelegramClient("session_parser", API_ID, API_HASH)
 async def start_parser():
     await client.start()
     me = await client.get_me()
-    print(f"✅ Telethon вошел: {me.first_name} (@{me.username})")
+    print(f"\n==========================================")
+    print(f"✅ Telethon успешно вошел: {me.first_name} (@{me.username})")
+    print(f"==========================================\n")
 
-    target_chat_ids = set()
+    target_entities = []
     chat_titles = {}
 
     for chat_name in MONITORED_CHATS:
         clean_name = chat_name.replace("https://t.me/", "").replace("@", "").strip()
         try:
             entity = await client.get_entity(clean_name)
-            p_id = get_peer_id(entity)
-            target_chat_ids.add(p_id)
-            title = getattr(entity, "title", clean_name)
-            chat_titles[p_id] = title
-            print(f"📡 Подключен чат: {title} [ID: {p_id}]")
+            # Вступаем в чат, если аккаунт ещё не состоит
+            try:
+                await client(JoinChannelRequest(entity))
+            except Exception:
+                pass
+            target_entities.append(entity)
+            chat_titles[entity.id] = getattr(entity, "title", clean_name)
+            print(f"📡 Активен мониторинг: {chat_titles[entity.id]}")
         except Exception as e:
-            print(f"⚠️ Не удалось подключить @{clean_name}: {e}")
+            print(f"⚠️ Ошибка подключения @{clean_name}: {e}")
 
-    print(f"\n📊 Всего активно слушаются чатов: {len(target_chat_ids)}\n")
+    print(f"\n Всего успешно подключено чатов: {len(target_entities)}\n")
 
-    @client.on(events.NewMessage)
-    async def parser_handler(event):
+    # Привязываем слушатель событий напрямую к массиву сущностей чатов
+    @client.on(events.NewMessage(chats=target_entities))
+    async def lead_handler(event):
         try:
-            chat_id = get_peer_id(event.message.peer_id)
             text = event.message.message or ""
-
-            if not text or chat_id not in target_chat_ids:
+            if not text:
                 return
 
             text_lower = text.lower()
@@ -230,7 +232,7 @@ async def start_parser():
             if not matched:
                 return
 
-            chat_title = chat_titles.get(chat_id, "ЖК Чат")
+            chat_title = getattr(event.chat, "title", "ЖК Чат")
             print(f"\n🔥 [НАЙДЕНА ЗАЯВКА] Чат: {chat_title} | Ключи: {matched}")
 
             sender = await event.get_sender()
@@ -248,18 +250,16 @@ async def start_parser():
             kb = get_lead_keyboard(user_link, msg_link)
 
             recipients = get_all_users()
-            print(f"👥 Отправка {len(recipients)} получателям...")
-
             for uid in recipients:
                 try:
                     increment_received(uid)
                     await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
-                    print(f"✅ Доставлено: {uid}")
-                except Exception as send_err:
-                    print(f"❌ Ошибка отправки: {send_err}")
+                    print(f"✅ Доставлено получателю: {uid}")
+                except Exception as err:
+                    print(f"❌ Ошибка отправки пользователю {uid}: {err}")
 
-        except Exception as e:
-            print(f"❌ Ошибка в обработчике: {e}")
+        except Exception as ex:
+            print(f"❌ Ошибка внутри обработчика: {ex}")
 
 # ==========================================
 # 🚀 ЗАПУСК
@@ -267,8 +267,11 @@ async def start_parser():
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
+    
+    # Запуск парсера
     asyncio.create_task(start_parser())
-    print("🚀 Бот запущен в режиме ожидания!")
+    
+    print("🚀 Бот запущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
