@@ -5,11 +5,17 @@ import logging
 import sqlite3
 from datetime import datetime
 
-# Автоматическая установка aiogram при необходимости
-try:
-    import aiogram
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "aiogram>=3.10.0"])
+# Автоматическая установка зависимостей
+def ensure_dependencies():
+    packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
+    for pkg in packages:
+        pkg_name = pkg.split(">=")[0]
+        try:
+            __import__(pkg_name)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+
+ensure_dependencies()
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
@@ -21,6 +27,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from telethon import TelegramClient, events
 
 # ==========================================
 # ⚙️ НАСТРОЙКИ
@@ -28,7 +35,43 @@ from aiogram.types import (
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
 SUPPORT_USERNAME = "@your_support_username"
 
-# Ключевые слова для поиска заявок
+# 🔑 Официальные публичные ключи Telegram Desktop (работают без регистрации на сайте)
+API_ID = 2040
+API_HASH = "b18441a1ff607e10a989891a5462e627"
+
+# Список чатов для мониторинга
+MONITORED_CHATS = [
+    "https://t.me/zveni_chat",
+    "https://t.me/zhk_zarechye_park",
+    "https://t.me/ogni_jk",
+    "https://t.me/krasnogorsk_Moscow",
+    "https://t.me/perviyuzniy",
+    "https://t.me/zelallei",
+    "https://t.me/talisman_rokoss",
+    "https://t.me/ChatPerovo",
+    "https://t.me/yartsevskaya24",
+    "https://t.me/pro_prokshino_chat",
+    "https://t.me/zkliner",
+    "https://t.me/yubitca12",
+    "https://t.me/novoe_vidnoejk",
+    "https://t.me/zagoryanka",
+    "https://t.me/jkbuninskiekvartali",
+    "https://t.me/Lermontovsky_54",
+    "https://t.me/stal_online",
+    "https://t.me/pervi_donskoy",
+    "https://t.me/krasnogorskiy_nahabino",
+    "https://t.me/michurpark",
+    "https://t.me/jksimvol",
+    "https://t.me/jkrimskiychatsobstvennikov",
+    "https://t.me/pirogovskayariviera",
+    "https://t.me/s_Les",
+    "https://t.me/JkBrigantina",
+    "https://t.me/yujnoe_bunino",
+    "https://t.me/pb17faza",
+    "https://t.me/ilpik",
+    "https://t.me/Lybpark",
+]
+
 KEYWORDS = [
     "сантехника", "сантехник", "электрика", "электрик", "ремонт техники",
     "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
@@ -118,14 +161,13 @@ def get_lead_keyboard(user_link: str, message_link: str):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==========================================
-# 🤖 ЛОГИКА TELEGRAM БОТА
+# 🤖 БОТ AIOGRAM
 # ==========================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Обработка личных сообщений бота
-@dp.message(F.chat.type == "private", CommandStart())
-@dp.message(F.chat.type == "private", F.text == "Перезапустить бота")
+@dp.message(CommandStart())
+@dp.message(F.text == "Перезапустить бота")
 async def cmd_start(message: Message):
     get_or_create_user(
         user_id=message.from_user.id,
@@ -133,24 +175,26 @@ async def cmd_start(message: Message):
         full_name=message.from_user.full_name or ""
     )
     text = (
-        "Привет — это бот онлайн-запросов и заявок на услуги!\n\n"
-        "🟢 **Статус:** Вечный неограниченный доступ активен.\n"
-        "Добавьте бота в ваши группы/чаты, и он будет фильтровать сообщения и присылать заявки сюда."
+        "Привет — это бот в котором приходят запросы в режиме онлайн!\n\n"
+        "🟢 **Статус:** Вечный доступ активирован.\n"
+        "Парсер слушает все указанные чаты через аккаунт без необходимости добавлять бота в группы."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-@dp.message(F.chat.type == "private", F.text == "Инструкция")
+@dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
     text = (
-        "📚 **Инструкция:**\n\n"
-        "1. Добавьте бота в чаты или группы, откуда нужно собирать заявки.\n"
-        "2. Бот автоматически отслеживает ключевые слова мастеров и услуг.\n"
-        "3. Найденные запросы моментально отправляются вам в личные сообщения.\n\n"
+        "📚 **Инструкция по использованию:**\n\n"
+        "1. **Обработка запросов:**\n"
+        "- Используйте кнопку «Написать сообщение», чтобы связаться с автором напрямую.\n"
+        "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к исходному посту в ЖК-чате.\n\n"
+        "2. **Статистика:**\n"
+        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов.\n\n"
         "📌 **Доступ:** Бессрочный безлимит."
     )
     await message.answer(text, parse_mode="Markdown")
 
-@dp.message(F.chat.type == "private", F.text == "Моя статистика")
+@dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
     user = get_or_create_user(
         user_id=message.from_user.id,
@@ -168,15 +212,12 @@ async def cmd_stats(message: Message):
     )
     await message.answer(text, parse_mode="Markdown")
 
-@dp.message(F.chat.type == "private", F.text.in_(["Проверить подписку", "Активировать подписку"]))
+@dp.message(F.text.in_(["Проверить подписку", "Активировать подписку"]))
 async def cmd_subscription(message: Message):
-    text = (
-        "💳 **Статус доступа:**\n\n"
-        "🟢 **Бессрочная подписка активна (Безлимит)**"
-    )
+    text = "💳 **Статус доступа:**\n\n🟢 **Бессрочная подписка активна (Безлимит)**"
     await message.answer(text, parse_mode="Markdown")
 
-@dp.message(F.chat.type == "private", F.text == "Поддержка")
+@dp.message(F.text == "Поддержка")
 async def cmd_support(message: Message):
     await message.answer(f"🛠 **Служба поддержки:**\n👉 {SUPPORT_USERNAME}")
 
@@ -195,53 +236,72 @@ async def callback_process_lead(call: CallbackQuery):
 async def callback_none(call: CallbackQuery):
     await call.answer("Вы уже отметили эту заявку.")
 
-@dp.message(Command("test_lead"))
-async def cmd_test_lead(message: Message):
-    get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
-    lead_text = "Соседи, подскажите проверенного сантехника пожалуйста 🙏\n\n🗣 **Чат:** ЖК Центральный"
-    kb = get_lead_keyboard("https://t.me/telegram", "https://t.me/telegram")
-    increment_received(message.from_user.id)
-    await message.answer(lead_text, reply_markup=kb, parse_mode="Markdown")
-
 # ==========================================
-# 📡 ОБРАБОТЧИК СООБЩЕНИЙ ИЗ ГРУПП
+# 📡 МОНИТОРИНГ ЧАТОВ TELETHON
 # ==========================================
-@dp.message(F.chat.type.in_(["group", "supergroup"]))
-async def handle_group_messages(message: Message):
-    text = message.text or message.caption or ""
-    if not text:
-        return
+client = TelegramClient("session_parser", API_ID, API_HASH)
 
-    text_lower = text.lower()
-    if not any(k in text_lower for k in KEYWORDS):
-        return
+async def start_parser():
+    await client.start()
+    me = await client.get_me()
+    print(f"✅ Парсер Telethon успешно подключен под аккаунтом: {me.first_name}")
 
-    chat_title = message.chat.title or "Группа"
-    sender = message.from_user
+    target_dialog_ids = set()
+    chat_titles = {}
 
-    # Формируем ссылки
-    user_link = f"https://t.me/{sender.username}" if sender and sender.username else f"tg://user?id={sender.id}" if sender else "https://t.me/telegram"
-    msg_link = f"https://t.me/{message.chat.username}/{message.message_id}" if message.chat.username else user_link
-
-    lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title}"
-    kb = get_lead_keyboard(user_link, msg_link)
-
-    # Отправляем всем пользователям бота
-    recipients = get_all_users()
-    for uid in recipients:
+    for link in MONITORED_CHATS:
         try:
-            increment_received(uid)
-            await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
-        except Exception as err:
-            logging.error(f"Ошибка отправки пользователю {uid}: {err}")
+            entity = await client.get_entity(link)
+            target_dialog_ids.add(entity.id)
+            chat_titles[entity.id] = getattr(entity, "title", link)
+            print(f"📡 Подключен чат: {chat_titles[entity.id]}")
+        except Exception as e:
+            print(f"⚠️ Не удалось подключить {link}: {e}")
+
+    @client.on(events.NewMessage)
+    async def lead_filter_handler(event):
+        text = event.message.message or ""
+        if not text:
+            return
+
+        if event.chat_id not in target_dialog_ids:
+            return
+
+        text_lower = text.lower()
+        if not any(k in text_lower for k in KEYWORDS):
+            return
+
+        chat_title = chat_titles.get(event.chat_id, "ЖК Чат")
+        print(f"🎯 Найдена заявка в [{chat_title}]: {text[:50]}")
+
+        sender = await event.get_sender()
+        if getattr(sender, "username", None):
+            user_link = f"https://t.me/{sender.username}"
+        else:
+            user_link = f"tg://user?id={event.sender_id}"
+
+        chat_username = getattr(event.chat, "username", None)
+        msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
+
+        lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title}"
+        kb = get_lead_keyboard(user_link, msg_link)
+
+        recipients = get_all_users()
+        for uid in recipients:
+            try:
+                increment_received(uid)
+                await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
+            except Exception as err:
+                logging.error(f"Ошибка отправки пользователю {uid}: {err}")
 
 # ==========================================
-# 🚀 ЗАПУСК
+# 🚀 ТОЧКА ВХОДА
 # ==========================================
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
-    print("🚀 Бот запущен! Добавьте его в группы для сбора сообщений.")
+    asyncio.create_task(start_parser())
+    print("🚀 Бот успешно запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
