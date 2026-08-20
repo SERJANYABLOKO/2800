@@ -3,9 +3,10 @@ import subprocess
 import asyncio
 import logging
 import sqlite3
+import re
 from datetime import datetime
 
-# Автоматическая установка зависимостей
+# Автоматическая проверка и установка зависимостей
 def ensure_dependencies():
     packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
     for pkg in packages:
@@ -28,56 +29,34 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from telethon import TelegramClient, events
+from telethon.utils import get_peer_id
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ
+# ⚙️ НАСТРОЙКИ И КЛЮЧИ
 # ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
-SUPPORT_USERNAME = "@your_support_username"
+SUPPORT_USERNAME = "@serjantyabloko"
 
-# 🔑 Официальные публичные ключи Telegram Desktop (работают без регистрации на сайте)
 API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
-# Список чатов для мониторинга
+# Список отслеживаемых чатов
 MONITORED_CHATS = [
-    "https://t.me/zveni_chat",
-    "https://t.me/zhk_zarechye_park",
-    "https://t.me/ogni_jk",
-    "https://t.me/krasnogorsk_Moscow",
-    "https://t.me/perviyuzniy",
-    "https://t.me/zelallei",
-    "https://t.me/talisman_rokoss",
-    "https://t.me/ChatPerovo",
-    "https://t.me/yartsevskaya24",
-    "https://t.me/pro_prokshino_chat",
-    "https://t.me/zkliner",
-    "https://t.me/yubitca12",
-    "https://t.me/novoe_vidnoejk",
-    "https://t.me/zagoryanka",
-    "https://t.me/jkbuninskiekvartali",
-    "https://t.me/Lermontovsky_54",
-    "https://t.me/stal_online",
-    "https://t.me/pervi_donskoy",
-    "https://t.me/krasnogorskiy_nahabino",
-    "https://t.me/michurpark",
-    "https://t.me/jksimvol",
-    "https://t.me/jkrimskiychatsobstvennikov",
-    "https://t.me/pirogovskayariviera",
-    "https://t.me/s_Les",
-    "https://t.me/JkBrigantina",
-    "https://t.me/yujnoe_bunino",
-    "https://t.me/pb17faza",
-    "https://t.me/ilpik",
-    "https://t.me/Lybpark",
+    "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
+    "perviyuzniy", "zelallei", "talisman_rokoss", "ChatPerovo",
+    "yartsevskaya24", "pro_prokshino_chat", "zkliner", "yubitca12",
+    "novoe_vidnoejk", "zagoryanka", "jkbuninskiekvartali", "Lermontovsky_54",
+    "stal_online", "pervi_donskoy", "krasnogorskiy_nahabino", "michurpark",
+    "jksimvol", "jkrimskiychatsobstvennikov", "pirogovskayariviera", "s_Les",
+    "JkBrigantina", "yujnoe_bunino", "pb17faza", "ilpik", "Lybpark"
 ]
 
 KEYWORDS = [
     "сантехника", "сантехник", "электрика", "электрик", "ремонт техники",
     "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
     "плесень", "тараканы", "дезинфекция", "дератизация", "дезинсекция",
-    "засор", "замыкание", "починить", "установить", "мастер", "посоветуйте мастера",
-    "подскажите мастера", "нужен мастер", "подскажите сантехника", "нужен электрик"
+    "засор", "замыкание", "починить", "установить", "мастер", "посоветуйте",
+    "подскажите", "нужен мастер", "ищу мастера", "трубу", "протечка"
 ]
 
 # ==========================================
@@ -161,7 +140,7 @@ def get_lead_keyboard(user_link: str, message_link: str):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ==========================================
-# 🤖 БОТ AIOGRAM
+# 🤖 ЛОГИКА TELEGRAM БОТА
 # ==========================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -175,32 +154,25 @@ async def cmd_start(message: Message):
         full_name=message.from_user.full_name or ""
     )
     text = (
-        "Привет — это бот в котором приходят запросы в режиме онлайн!\n\n"
-        "🟢 **Статус:** Вечный доступ активирован.\n"
-        "Парсер слушает все указанные чаты через аккаунт без необходимости добавлять бота в группы."
+        "Привет — это бот онлайн-запросов и заявок на услуги!\n\n"
+        "🟢 **Статус:** Вечный доступ активен.\n"
+        "Вы будете получать уведомления со всех подключенных ЖК-чатов."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
     text = (
-        "📚 **Инструкция по использованию:**\n\n"
-        "1. **Обработка запросов:**\n"
-        "- Используйте кнопку «Написать сообщение», чтобы связаться с автором напрямую.\n"
-        "- Используйте кнопку «Ссылка на сообщение», чтобы перейти к исходному посту в ЖК-чате.\n\n"
-        "2. **Статистика:**\n"
-        "- В разделе «Моя статистика» отображается количество полученных и обработанных запросов.\n\n"
-        "📌 **Доступ:** Бессрочный безлимит."
+        "📚 **Инструкция:**\n\n"
+        "1. Заявки приходят автоматически, как только кто-то пишет о проблеме в чате ЖК.\n"
+        "2. Нажмите «Написать сообщение», чтобы написать клиенту в ЛС.\n"
+        "3. Нажмите «Ссылка на сообщение», чтобы перейти к посту в группе."
     )
     await message.answer(text, parse_mode="Markdown")
 
 @dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
-    user = get_or_create_user(
-        user_id=message.from_user.id,
-        username=message.from_user.username or "",
-        full_name=message.from_user.full_name or ""
-    )
+    user = get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
     received, processed = user[4], user[5]
     conversion = round((processed / received * 100), 1) if received > 0 else 0
     text = (
@@ -208,14 +180,13 @@ async def cmd_stats(message: Message):
         f"📥 **Получено запросов:** {received}\n"
         f"✅ **Обработано вами:** {processed}\n"
         f"🎯 **Конверсия:** {conversion}%\n"
-        "♾ **Подписка:** Бессрочная"
+        "♾ **Подписка:** Бессрочная (Безлимит)"
     )
     await message.answer(text, parse_mode="Markdown")
 
 @dp.message(F.text.in_(["Проверить подписку", "Активировать подписку"]))
 async def cmd_subscription(message: Message):
-    text = "💳 **Статус доступа:**\n\n🟢 **Бессрочная подписка активна (Безлимит)**"
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer("💳 **Статус доступа:**\n\n🟢 **Бессрочная подписка активна (Безлимит)**", parse_mode="Markdown")
 
 @dp.message(F.text == "Поддержка")
 async def cmd_support(message: Message):
@@ -244,64 +215,87 @@ client = TelegramClient("session_parser", API_ID, API_HASH)
 async def start_parser():
     await client.start()
     me = await client.get_me()
-    print(f"✅ Парсер Telethon успешно подключен под аккаунтом: {me.first_name}")
+    print(f"\n==========================================")
+    print(f"✅ Telethon успешно вошел: {me.first_name} (@{me.username})")
+    print(f"==========================================\n")
 
-    target_dialog_ids = set()
+    monitored_ids = set()
     chat_titles = {}
 
-    for link in MONITORED_CHATS:
-        try:
-            entity = await client.get_entity(link)
-            target_dialog_ids.add(entity.id)
-            chat_titles[entity.id] = getattr(entity, "title", link)
-            print(f"📡 Подключен чат: {chat_titles[entity.id]}")
-        except Exception as e:
-            print(f"⚠️ Не удалось подключить {link}: {e}")
+    # Загружаем список всех диалогов аккаунта
+    dialogs = await client.get_dialogs()
+    for d in dialogs:
+        username = getattr(d.entity, "username", None)
+        title = getattr(d.entity, "title", str(d.id))
+        real_id = get_peer_id(d.entity)
+
+        # Проверяем совпадение по юзернейму или названию
+        for target in MONITORED_CHATS:
+            clean_target = target.replace("https://t.me/", "").replace("@", "").lower()
+            if (username and username.lower() == clean_target) or (clean_target in title.lower()):
+                monitored_ids.add(real_id)
+                chat_titles[real_id] = title
+                print(f"📡 Мониторинг активен для: {title} (ID: {real_id})")
+
+    print(f"\nВсего подключено чатов для прослушивания: {len(monitored_ids)}\n")
 
     @client.on(events.NewMessage)
-    async def lead_filter_handler(event):
+    async def incoming_message_handler(event):
+        chat_id = get_peer_id(event.message.peer_id)
+
+        # Если чат не из списка мониторинга, пропускаем
+        if chat_id not in monitored_ids:
+            return
+
         text = event.message.message or ""
         if not text:
             return
 
-        if event.chat_id not in target_dialog_ids:
-            return
-
         text_lower = text.lower()
-        if not any(k in text_lower for k in KEYWORDS):
+        matched = [k for k in KEYWORDS if k in text_lower]
+        
+        # Если ключевых слов нет, пропускаем
+        if not matched:
             return
 
-        chat_title = chat_titles.get(event.chat_id, "ЖК Чат")
-        print(f"🎯 Найдена заявка в [{chat_title}]: {text[:50]}")
+        chat_name = chat_titles.get(chat_id, "ЖК Чат")
+        print(f"\n🎯 НАЙДЕНА ЗАЯВКА в [{chat_name}] (Ключи: {matched}):\n{text}\n")
 
+        # Получаем данные автора
         sender = await event.get_sender()
         if getattr(sender, "username", None):
             user_link = f"https://t.me/{sender.username}"
+        elif sender:
+            user_link = f"tg://user?id={sender.id}"
         else:
-            user_link = f"tg://user?id={event.sender_id}"
+            user_link = "https://t.me/telegram"
 
         chat_username = getattr(event.chat, "username", None)
         msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
 
-        lead_message = f"{text}\n\n🗣 **Чат:**\n{chat_title}"
+        lead_message = f"🔔 **Новая заявка:**\n\n{text}\n\n🗣 **Чат:** {chat_name}"
         kb = get_lead_keyboard(user_link, msg_link)
 
         recipients = get_all_users()
+        if not recipients:
+            print("⚠️ Нет пользователей в базе! Нажмите /start в боте.")
+
         for uid in recipients:
             try:
                 increment_received(uid)
                 await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
-            except Exception as err:
-                logging.error(f"Ошибка отправки пользователю {uid}: {err}")
+                print(f" Отправлено пользователю {uid}")
+            except Exception as e:
+                print(f"❌ Ошибка отправки пользователю {uid}: {e}")
 
 # ==========================================
-# 🚀 ТОЧКА ВХОДА
+# 🚀 ЗАПУСК
 # ==========================================
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
     asyncio.create_task(start_parser())
-    print("🚀 Бот успешно запущен!")
+    print("🚀 Бот запущен! Ожидание сообщений...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
