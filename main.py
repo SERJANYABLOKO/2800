@@ -3,10 +3,9 @@ import subprocess
 import asyncio
 import logging
 import sqlite3
-import re
 from datetime import datetime
 
-# Автоматическая проверка и установка зависимостей
+# Установка зависимостей
 def ensure_dependencies():
     packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
     for pkg in packages:
@@ -32,7 +31,7 @@ from telethon import TelegramClient, events
 from telethon.utils import get_peer_id
 
 # ==========================================
-# ⚙️ НАСТРОЙКИ И КЛЮЧИ
+# ⚙️ НАСТРОЙКИ
 # ==========================================
 BOT_TOKEN = "8313715983:AAGbi8TxcXuAgwDyFxiqj-0i7ze2CZvzl-w"
 SUPPORT_USERNAME = "@serjantyabloko"
@@ -40,7 +39,10 @@ SUPPORT_USERNAME = "@serjantyabloko"
 API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
-# Список отслеживаемых чатов
+# 🔑 СПИСОК ID, КОМУ ВСЕГДА ПРИХОДЯТ ЗАЯВКИ (Ваш ID резервируется здесь)
+# Если знаете свой точный числовой ID, можете вписать его: HARDCODED_ADMINS = [123456789]
+HARDCODED_ADMINS = []
+
 MONITORED_CHATS = [
     "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
     "perviyuzniy", "zelallei", "talisman_rokoss", "ChatPerovo",
@@ -56,7 +58,7 @@ KEYWORDS = [
     "муж на час", "плиточник", "отделка", "полы", "стены", "окна", "двери",
     "плесень", "тараканы", "дезинфекция", "дератизация", "дезинсекция",
     "засор", "замыкание", "починить", "установить", "мастер", "посоветуйте",
-    "подскажите", "нужен мастер", "ищу мастера", "трубу", "протечка"
+    "подскажите", "нужен мастер", "ищу мастера", "тест"
 ]
 
 # ==========================================
@@ -97,17 +99,17 @@ def get_or_create_user(user_id: int, username: str, full_name: str):
     conn.close()
     return user
 
-def increment_processed(user_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET processed_leads = processed_leads + 1 WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-
 def increment_received(user_id: int):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("UPDATE users SET received_leads = received_leads + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def increment_processed(user_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET processed_leads = processed_leads + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
@@ -117,7 +119,10 @@ def get_all_users():
     cursor.execute("SELECT user_id FROM users")
     rows = cursor.fetchall()
     conn.close()
-    return [r[0] for r in rows]
+    db_users = [r[0] for r in rows]
+    # Объединяем пользователей базы и встроенный список
+    all_recipients = list(set(db_users + HARDCODED_ADMINS))
+    return all_recipients
 
 # ==========================================
 # ⌨️ КЛАВИАТУРЫ
@@ -153,140 +158,111 @@ async def cmd_start(message: Message):
         username=message.from_user.username or "",
         full_name=message.from_user.full_name or ""
     )
+    if message.from_user.id not in HARDCODED_ADMINS:
+        HARDCODED_ADMINS.append(message.from_user.id)
+
+    print(f"👤 Новый активный пользователь: {message.from_user.full_name} (ID: {message.from_user.id})")
+
     text = (
         "Привет — это бот онлайн-запросов и заявок на услуги!\n\n"
-        "🟢 **Статус:** Вечный доступ активен.\n"
-        "Вы будете получать уведомления со всех подключенных ЖК-чатов."
+        f"🟢 **Статус:** Вечный доступ активен.\n"
+        f"🆔 Ваш ID: `{message.from_user.id}` (подключен к рассылке)\n\n"
+        "Ожидайте заявок из чатов."
     )
     await message.answer(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
-    text = (
-        "📚 **Инструкция:**\n\n"
-        "1. Заявки приходят автоматически, как только кто-то пишет о проблеме в чате ЖК.\n"
-        "2. Нажмите «Написать сообщение», чтобы написать клиенту в ЛС.\n"
-        "3. Нажмите «Ссылка на сообщение», чтобы перейти к посту в группе."
-    )
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer("📚 Бот автоматически находит сообщения по ключевым словам и пересылает их сюда.", parse_mode="Markdown")
 
 @dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
     user = get_or_create_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name or "")
-    received, processed = user[4], user[5]
-    conversion = round((processed / received * 100), 1) if received > 0 else 0
-    text = (
-        "📊 **Ваша статистика:**\n\n"
-        f"📥 **Получено запросов:** {received}\n"
-        f"✅ **Обработано вами:** {processed}\n"
-        f"🎯 **Конверсия:** {conversion}%\n"
-        "♾ **Подписка:** Бессрочная (Безлимит)"
-    )
+    text = f"📊 **Статистика:**\n📥 Получено: {user[4]}\n✅ Обработано: {user[5]}"
     await message.answer(text, parse_mode="Markdown")
 
 @dp.message(F.text.in_(["Проверить подписку", "Активировать подписку"]))
-async def cmd_subscription(message: Message):
-    await message.answer("💳 **Статус доступа:**\n\n🟢 **Бессрочная подписка активна (Безлимит)**", parse_mode="Markdown")
+async def cmd_sub(message: Message):
+    await message.answer("💳 **Статус:** 🟢 Бессрочный безлимитный доступ.", parse_mode="Markdown")
 
 @dp.message(F.text == "Поддержка")
 async def cmd_support(message: Message):
-    await message.answer(f"🛠 **Служба поддержки:**\n👉 {SUPPORT_USERNAME}")
+    await message.answer(f"🛠 Поддержка: {SUPPORT_USERNAME}")
 
 @dp.callback_query(F.data == "process_lead_action")
 async def callback_process_lead(call: CallbackQuery):
     increment_processed(call.from_user.id)
-    await call.answer("✅ Отмечено в вашей статистике!")
-    new_kb = InlineKeyboardMarkup(
-        inline_keyboard=[row for row in call.message.reply_markup.inline_keyboard if not any("process_lead_action" in b.callback_data for b in row)] + [
-            [InlineKeyboardButton(text="✅ Заявка обработана", callback_data="none")]
-        ]
-    )
-    await call.message.edit_reply_markup(reply_markup=new_kb)
-
-@dp.callback_query(F.data == "none")
-async def callback_none(call: CallbackQuery):
-    await call.answer("Вы уже отметили эту заявку.")
+    await call.answer("✅ Отмечено!")
 
 # ==========================================
-# 📡 МОНИТОРИНГ ЧАТОВ TELETHON
+# 📡 TELETHON ПАРСЕР
 # ==========================================
 client = TelegramClient("session_parser", API_ID, API_HASH)
 
 async def start_parser():
     await client.start()
     me = await client.get_me()
-    print(f"\n==========================================")
-    print(f"✅ Telethon успешно вошел: {me.first_name} (@{me.username})")
-    print(f"==========================================\n")
+    print(f"✅ Telethon вошел в аккаунт: {me.first_name} (@{me.username})")
 
-    monitored_ids = set()
+    target_dialog_ids = set()
     chat_titles = {}
 
-    # Загружаем список всех диалогов аккаунта
     dialogs = await client.get_dialogs()
     for d in dialogs:
         username = getattr(d.entity, "username", None)
         title = getattr(d.entity, "title", str(d.id))
         real_id = get_peer_id(d.entity)
 
-        # Проверяем совпадение по юзернейму или названию
         for target in MONITORED_CHATS:
             clean_target = target.replace("https://t.me/", "").replace("@", "").lower()
             if (username and username.lower() == clean_target) or (clean_target in title.lower()):
-                monitored_ids.add(real_id)
+                target_dialog_ids.add(real_id)
                 chat_titles[real_id] = title
-                print(f"📡 Мониторинг активен для: {title} (ID: {real_id})")
+                print(f"📡 Прослушивается чат: {title} [ID: {real_id}]")
 
-    print(f"\nВсего подключено чатов для прослушивания: {len(monitored_ids)}\n")
+    print(f"\n📊 Всего подключено чатов: {len(target_dialog_ids)}\n")
 
-    @client.on(events.NewMessage)
-    async def incoming_message_handler(event):
-        chat_id = get_peer_id(event.message.peer_id)
+    # Обработка входящих сообщений (включая свои собственные для тестов)
+    @client.on(events.NewMessage(incoming=None))
+    async def parser_handler(event):
+        try:
+            chat_id = get_peer_id(event.message.peer_id)
+            text = event.message.message or ""
 
-        # Если чат не из списка мониторинга, пропускаем
-        if chat_id not in monitored_ids:
-            return
+            if not text or chat_id not in target_dialog_ids:
+                return
 
-        text = event.message.message or ""
-        if not text:
-            return
+            text_lower = text.lower()
+            matched = [k for k in KEYWORDS if k in text_lower]
 
-        text_lower = text.lower()
-        matched = [k for k in KEYWORDS if k in text_lower]
-        
-        # Если ключевых слов нет, пропускаем
-        if not matched:
-            return
+            if not matched:
+                return
 
-        chat_name = chat_titles.get(chat_id, "ЖК Чат")
-        print(f"\n🎯 НАЙДЕНА ЗАЯВКА в [{chat_name}] (Ключи: {matched}):\n{text}\n")
+            chat_title = chat_titles.get(chat_id, "ЖК Чат")
+            print(f"\n🔥 [НАЙДЕНА ЗАЯВКА] Чат: {chat_title} | Ключи: {matched}")
+            print(f"Текст: {text}\n")
 
-        # Получаем данные автора
-        sender = await event.get_sender()
-        if getattr(sender, "username", None):
-            user_link = f"https://t.me/{sender.username}"
-        elif sender:
-            user_link = f"tg://user?id={sender.id}"
-        else:
-            user_link = "https://t.me/telegram"
+            sender = await event.get_sender()
+            user_link = f"https://t.me/{sender.username}" if sender and getattr(sender, "username", None) else f"tg://user?id={event.sender_id}"
+            chat_username = getattr(event.chat, "username", None)
+            msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
 
-        chat_username = getattr(event.chat, "username", None)
-        msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
+            lead_message = f"🔔 **Новая заявка:**\n\n{text}\n\n🗣 **Чат:** {chat_title}"
+            kb = get_lead_keyboard(user_link, msg_link)
 
-        lead_message = f"🔔 **Новая заявка:**\n\n{text}\n\n🗣 **Чат:** {chat_name}"
-        kb = get_lead_keyboard(user_link, msg_link)
+            recipients = get_all_users()
+            print(f"👥 Отправка {len(recipients)} получателям...")
 
-        recipients = get_all_users()
-        if not recipients:
-            print("⚠️ Нет пользователей в базе! Нажмите /start в боте.")
+            for uid in recipients:
+                try:
+                    increment_received(uid)
+                    await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
+                    print(f"✅ Успешно доставлено на ID: {uid}")
+                except Exception as send_err:
+                    print(f"❌ Ошибка отправки пользователю {uid}: {send_err}")
 
-        for uid in recipients:
-            try:
-                increment_received(uid)
-                await bot.send_message(uid, lead_message, reply_markup=kb, parse_mode="Markdown")
-                print(f" Отправлено пользователю {uid}")
-            except Exception as e:
-                print(f"❌ Ошибка отправки пользователю {uid}: {e}")
+        except Exception as e:
+            print(f"❌ Ошибка внутри парсера: {e}")
 
 # ==========================================
 # 🚀 ЗАПУСК
@@ -295,7 +271,7 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
     asyncio.create_task(start_parser())
-    print("🚀 Бот запущен! Ожидание сообщений...")
+    print("🚀 Бот запущен в режиме ожидания!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
