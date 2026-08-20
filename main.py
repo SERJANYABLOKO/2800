@@ -39,13 +39,30 @@ API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
 MONITORED_CHATS = [
+    # Предыдущие чаты
     "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
     "perviyuzniy", "zelallei", "talisman_rokoss", "ChatPerovo",
     "yartsevskaya24", "pro_prokshino_chat", "zkliner", "yubitca12",
     "novoe_vidnoejk", "zagoryanka", "jkbuninskiekvartali", "Lermontovsky_54",
     "stal_online", "pervi_donskoy", "krasnogorskiy_nahabino", "michurpark",
     "jksimvol", "jkrimskiychatsobstvennikov", "pirogovskayariviera", "s_Les",
-    "JkBrigantina", "yujnoe_bunino", "pb17faza", "ilpik", "Lybpark"
+    "JkBrigantina", "yujnoe_bunino", "pb17faza", "ilpik", "Lybpark",
+    
+    # Новые чаты
+    "Ladozhsky_AVENIR", "jkkosmos", "Remont_T2", "Yamburg_citi",
+    "jk_grafika", "svetlana_park_zhk", "civilization10house", "SevDolChat",
+    "GarageSaleCivi", "domterra", "manufactura_james_beck", "jkyugtaun",
+    "jkgrafikanavode", "aeronaut_home", "ZHKParadnyjansambl", "Pulse_Premier",
+    "gkcolnetnii55", "jk_dubrovsky", "Gorodpervyh", "enfildnew",
+    "zk_ehndfild", "zk_statusuparkapobedy", "rozhdestvenskijkvartal", "pleset10",
+    "avtograf_centre", "dom_aviator", "aleksandrovskiykaskad", "yslugisuuny",
+    "morskaja_naberezhnaja", "pikspbGK", "fsk_zoom", "jk_lybograd_kvs",
+    "zk_schastie", "mv_home", "jkjivoyruchei", "chat_group_tandem",
+    "zhk_galaktika", "PragmaCity_OD_3_20", "newohtachat", "byron_gk",
+    "prim41", "nebo10sosedi", "akvilon_stories_akvilon", "Jk_UltraCity",
+    "jk_forestakvilon", "jk_kan", "chatvolok", "alia_chat",
+    "sakramentodobroe", "salpark56", "klenovie_allei", "GB1_GB2",
+    "bluga", "Barakholka_Odintsovo", "bd_park"
 ]
 
 KEYWORDS = [
@@ -215,7 +232,6 @@ async def start_parser():
         clean_name = chat_name.replace("https://t.me/", "").replace("@", "").strip()
         try:
             entity = await client.get_entity(clean_name)
-            # Вступаем в чат, если аккаунт ещё не состоит
             try:
                 await client(JoinChannelRequest(entity))
             except Exception:
@@ -228,7 +244,6 @@ async def start_parser():
 
     print(f"\n Всего успешно подключено чатов: {len(target_entities)}\n")
 
-    # Привязываем слушатель событий напрямую к массиву сущностей чатов
     @client.on(events.NewMessage(chats=target_entities))
     async def lead_handler(event):
         try:
@@ -277,10 +292,7 @@ async def start_parser():
 async def main():
     logging.basicConfig(level=logging.INFO)
     init_db()
-    
-    # Запуск парсера
     asyncio.create_task(start_parser())
-    
     print("🚀 Бот запущен и готов к работе!")
     await dp.start_polling(bot)
 
