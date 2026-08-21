@@ -80,7 +80,7 @@ MONITORED_CHATS = [
     "uznaabitca", "kuntsevo_online", "gkleningradski", "Skandi_Klubb",
     "chekvartal", "pehra_bez_spama"
 ]
-]
+
 
 # Базовые корни/слова (стеммер сам найдет все формы: починить -> починил, чинит и т.д.)
 KEYWORDS = [
