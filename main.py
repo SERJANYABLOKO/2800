@@ -44,6 +44,7 @@ API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
 MONITORED_CHATS = [
+    # Предыдущие чаты
     "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
     "perviyuzniy", "zelallei", "talisman_rokoss", "ChatPerovo",
     "yartsevskaya24", "pro_prokshino_chat", "zkliner", "yubitca12",
@@ -64,7 +65,21 @@ MONITORED_CHATS = [
     "prim41", "nebo10sosedi", "akvilon_stories_akvilon", "Jk_UltraCity",
     "jk_forestakvilon", "jk_kan", "chatvolok", "alia_chat",
     "sakramentodobroe", "salpark56", "klenovie_allei", "GB1_GB2",
-    "bluga", "Barakholka_Odintsovo", "bd_park"
+    "bluga", "Barakholka_Odintsovo", "bd_park","KvartalOnly", "zk_zilart", "rodnikimoskva", "oblaka20k2",
+    "rasskazovo_sosedi", "Shagal_city", "remont_tp", "perviy_sheremetevskiy",
+    "perovotg", "ostafievo", "UpSkolkovoRemont", "MyBasmanny",
+    "poboltaem_ZV", "bigputilkovo", "pervyy_dubrovskiy", "chat_tinao_novaya_moskva",
+    "jkmoskvichka77", "gkmoskvichka3", "simvol_26", "novie_kotelniki_chat",
+    "sosedegorovo", "rasskazovo2", "onemay_chat", "mamochki_rama",
+    "lovebalance", "Majdulin1991", "pyatnitskie_luga", "jk_geroev",
+    "tp_park", "otrada_lesnaya_sosedi", "vniissok", "matveypark",
+    "jk_michurinsky_park", "pulkovskiy2", "akvilonleaves", "devyatkinososedi",
+    "GRAFORLOVSPB", "zhk_univercity", "respectpsk", "Parkolovocds",
+    "czarscapital", "jk_morskaya_milya", "colorciti_10_26", "therechka",
+    "paruschat", "mama_lyublino", "odi_v13", "samolet2021all",
+    "uznaabitca", "kuntsevo_online", "gkleningradski", "Skandi_Klubb",
+    "chekvartal", "pehra_bez_spama"
+]
 ]
 
 # Базовые корни/слова (стеммер сам найдет все формы: починить -> починил, чинит и т.д.)
