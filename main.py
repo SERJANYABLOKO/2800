@@ -3,10 +3,11 @@ import subprocess
 import asyncio
 import logging
 import sqlite3
+import re
 from datetime import datetime
 
 def ensure_dependencies():
-    packages = ["aiogram>=3.10.0", "telethon>=1.36.0"]
+    packages = ["aiogram>=3.10.0", "telethon>=1.36.0", "nltk>=3.8.1"]
     for pkg in packages:
         pkg_name = pkg.split(">=")[0]
         try:
@@ -28,6 +29,10 @@ from aiogram.types import (
 )
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import JoinChannelRequest
+from nltk.stem.snowball import SnowballStemmer
+
+# Инициализация стеммера для русского языка
+stemmer = SnowballStemmer("russian")
 
 # ==========================================
 # ⚙️ НАСТРОЙКИ
@@ -39,7 +44,6 @@ API_ID = 2040
 API_HASH = "b18441a1ff607e10a989891a5462e627"
 
 MONITORED_CHATS = [
-    # Предыдущие чаты
     "zveni_chat", "zhk_zarechye_park", "ogni_jk", "krasnogorsk_Moscow",
     "perviyuzniy", "zelallei", "talisman_rokoss", "ChatPerovo",
     "yartsevskaya24", "pro_prokshino_chat", "zkliner", "yubitca12",
@@ -47,8 +51,6 @@ MONITORED_CHATS = [
     "stal_online", "pervi_donskoy", "krasnogorskiy_nahabino", "michurpark",
     "jksimvol", "jkrimskiychatsobstvennikov", "pirogovskayariviera", "s_Les",
     "JkBrigantina", "yujnoe_bunino", "pb17faza", "ilpik", "Lybpark",
-    
-    # Новые чаты
     "Ladozhsky_AVENIR", "jkkosmos", "Remont_T2", "Yamburg_citi",
     "jk_grafika", "svetlana_park_zhk", "civilization10house", "SevDolChat",
     "GarageSaleCivi", "domterra", "manufactura_james_beck", "jkyugtaun",
@@ -65,45 +67,49 @@ MONITORED_CHATS = [
     "bluga", "Barakholka_Odintsovo", "bd_park"
 ]
 
+# Базовые корни/слова (стеммер сам найдет все формы: починить -> починил, чинит и т.д.)
 KEYWORDS = [
     # 1. Холодильное оборудование
-    "холодильник", "холодос", "морозилка", "морозильник", "морозильня", "ларь", 
-    "морозильный ларь", "холодильника", "холодильнику", "холодильщику",
-
+    "холодильник", "холодос", "морозилк", "морозильник", "ларь",
+    
     # 2. Стиральные и сушильные машины
-    "стиралка", "стиральная", "стиральная машина", "стиральную", "стиралки", 
-    "стиралку", "сушилка", "сушильная машина", "машинка автомат",
-
+    "стиралк", "стиральн", "сушилк", "сушильн",
+    
     # 3. Посудомоечные машины
-    "посудомойка", "посудомоечную", "посудомоечная", "посудомойку", "пмм", 
-    "посудомоечная машина", "посудомойки",
-
+    "посудомойк", "посудомоечн", "пмм",
+    
     # 4. Плиты, панели и духовки
-    "электроплита", "варочня", "варочная панель", "варочная", "индукционная", 
-    "индукция", "духовка", "духовой шкаф", "электроплиту", "плита",
-
+    "электроплит", "варочн", "индукцион", "индукц", "духовк", "плит",
+    
     # 5. Сантехника и коммуникации
-    "сантехник", "сантехника", "сантехнику", "кран", "смеситель", "сифон", 
-    "протечка", "протек", "засор", "слив", "сливы", "труба", "прочистка", 
-    "ванная", "унитаз", "раковина", "мусоропровод",
-
+    "сантехник", "кран", "смесител", "сифон", "протечк", "протек", 
+    "засор", "слив", "труб", "прочистк", "ванн", "унитаз", "раковин", "мусоропровод",
+    
     # 6. Электрика
-    "электрик", "электрика", "электрику", "проводка", "розетка", "автомат", 
-    "щиток", "короткое замыкание",
-
+    "электрик", "проводк", "розетк", "автомат", "щиток", "замыкани",
+    
     # 7. Специалисты и услуги
-    "мастер", "специалист", "сборщик", "подключение", "установка", 
-    "диагностика", "мастера", "ремонт", "работник", "сборщика",
-
-    # 8. Общие запросы на ремонт
-    "ремонт техники", "мастер по технике", "мастер по стиральным", 
-    "мастер по холодильникам", "починить", "отремонтировать", "сломалась", "сломался",
-
-    # 9. Частые симптомы и поломки
-    "не морозит", "течет", "намораживает", "не сливает", "не греет", 
-    "не греет воду", "не крутит", "не крутит барабан", "не включается", 
-    "выбивает автомат", "шумит", "гудит", "гремит", "пахнет гарью", "ошибка"
+    "мастер", "специалист", "сборщик", "подключен", "установк", "диагностик", "ремонт", "работник",
+    
+    # 8. Действия и поломки
+    "починить", "отремонтировать", "сломаться", "морозить", "течь", "намораживать", 
+    "греть", "крутить", "включаться", "выбивать", "шуметь", "гудеть", "греметь", "гарь", "ошибк"
 ]
+
+# Заранее стеммим ключевые слова для максимальной скорости
+STEMMED_KEYWORDS = {stemmer.stem(kw) for kw in KEYWORDS}
+
+def check_match(text: str) -> list[str]:
+    """Проверяет совпадение текста по корням слов."""
+    words = re.findall(r'\b[а-яёa-z0-9]+\b', text.lower())
+    matched_stems = []
+    
+    for word in words:
+        st = stemmer.stem(word)
+        if st in STEMMED_KEYWORDS:
+            matched_stems.append(word)
+            
+    return list(set(matched_stems))
 
 # ==========================================
 # 🗄 БАЗА ДАННЫХ
@@ -214,7 +220,7 @@ async def cmd_test(message: Message):
 
 @dp.message(F.text == "Инструкция")
 async def cmd_instruction(message: Message):
-    await message.answer("📚 Бот в реальном времени находит запросы по ключевым словам и пересылает их сюда.", parse_mode="Markdown")
+    await message.answer("📚 Бот в реальном времени находит запросы по однокоренным словам и пересылает их сюда.", parse_mode="Markdown")
 
 @dp.message(F.text == "Моя статистика")
 async def cmd_stats(message: Message):
@@ -273,14 +279,12 @@ async def start_parser():
             if not text:
                 return
 
-            text_lower = text.lower()
-            matched = [k for k in KEYWORDS if k in text_lower]
-
+            matched = check_match(text)
             if not matched:
                 return
 
             chat_title = getattr(event.chat, "title", "ЖК Чат")
-            print(f"\n🔥 [НАЙДЕНА ЗАЯВКА] Чат: {chat_title} | Ключи: {matched}")
+            print(f"\n🔥 [НАЙДЕНА ЗАЯВКА] Чат: {chat_title} | Найденные слова: {matched}")
 
             sender = await event.get_sender()
             if sender and getattr(sender, "username", None):
@@ -293,7 +297,12 @@ async def start_parser():
             chat_username = getattr(event.chat, "username", None)
             msg_link = f"https://t.me/{chat_username}/{event.message.id}" if chat_username else user_link
 
-            lead_message = f"🔔 **Новая заявка:**\n\n{text}\n\n🗣 **Чат:** {chat_title}"
+            lead_message = (
+                f"🔔 **Новая заявка:**\n\n"
+                f"{text}\n\n"
+                f"🏷 **Ключевые слова:** {', '.join(matched)}\n"
+                f"🗣 **Чат:** {chat_title}"
+            )
             kb = get_lead_keyboard(user_link, msg_link)
 
             recipients = get_all_users()
